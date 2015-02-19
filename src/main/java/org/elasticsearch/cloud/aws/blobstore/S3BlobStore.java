@@ -54,16 +54,22 @@ public class S3BlobStore extends AbstractComponent implements BlobStore {
     private final ByteSizeValue bufferSize;
 
     private final boolean serverSideEncryption;
+    
+    private final String clientSideEncryptionPrivateKey;
+    
+    private final String clientSideEncryptionPublicKey;
 
     private final int numberOfRetries;
 
-    public S3BlobStore(Settings settings, AmazonS3 client, String bucket, @Nullable String region, boolean serverSideEncryption,
+    public S3BlobStore(Settings settings, AmazonS3 client, String bucket, @Nullable String region, boolean serverSideEncryption, String clientSideEncryptionPublicKey, String clientSideEncryptionPrivateKey,
                        ByteSizeValue bufferSize, int maxRetries) {
         super(settings);
         this.client = client;
         this.bucket = bucket;
         this.region = region;
         this.serverSideEncryption = serverSideEncryption;
+        this.clientSideEncryptionPrivateKey = clientSideEncryptionPrivateKey;
+        this.clientSideEncryptionPublicKey = clientSideEncryptionPublicKey;
 
         this.bufferSize = (bufferSize != null) ? bufferSize : MIN_BUFFER_SIZE;
         if (this.bufferSize.getBytes() < MIN_BUFFER_SIZE.getBytes()) {
@@ -101,6 +107,14 @@ public class S3BlobStore extends AbstractComponent implements BlobStore {
 
     public int numberOfRetries() {
         return numberOfRetries;
+    }
+    
+    public String clientSideEncryptionPrivateKey() {
+    	return clientSideEncryptionPrivateKey;
+    }
+    
+    public String clientSideEncryptionPublicKey() {
+    	return clientSideEncryptionPublicKey;
     }
 
     @Override

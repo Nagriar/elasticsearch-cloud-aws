@@ -19,8 +19,22 @@
 
 package org.elasticsearch.cloud.aws.blobstore;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.s3.model.*;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.security.InvalidKeyException;
+import java.security.Key;
+import java.security.NoSuchAlgorithmException;
+
+import javax.crypto.Cipher;
+import javax.crypto.CipherInputStream;
+import javax.crypto.CipherOutputStream;
+import javax.crypto.NoSuchPaddingException;
+
+import org.bouncycastle.crypto.util.PrivateKeyFactory;
+import org.bouncycastle.crypto.util.PublicKeyFactory;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
@@ -29,10 +43,13 @@ import org.elasticsearch.common.blobstore.support.AbstractBlobContainer;
 import org.elasticsearch.common.blobstore.support.PlainBlobMetaData;
 import org.elasticsearch.common.collect.ImmutableMap;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.services.s3.model.AmazonS3Exception;
+import com.amazonaws.services.s3.model.CopyObjectRequest;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
 
 /**
  *
@@ -80,7 +97,13 @@ public class S3BlobContainer extends AbstractBlobContainer {
         while (retry <= blobStore.numberOfRetries()) {
             try {
                 S3Object s3Object = blobStore.client().getObject(blobStore.bucket(), buildKey(blobName));
-                return s3Object.getObjectContent();
+                InputStream objectStream = s3Object.getObjectContent();
+                if (blobStore.clientSideEncryptionPrivateKey() != null) {
+                	Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding", new BouncyCastleProvider());
+                	cipher.init(Cipher.DECRYPT_MODE, (Key) PrivateKeyFactory.createKey(blobStore.clientSideEncryptionPrivateKey().getBytes()));
+                	objectStream = new CipherInputStream(objectStream, cipher);
+                }
+                return objectStream;
             } catch (AmazonClientException e) {
                 if (blobStore.shouldRetry(e) && (retry < blobStore.numberOfRetries())) {
                     retry++;
@@ -92,7 +115,13 @@ public class S3BlobContainer extends AbstractBlobContainer {
                     }
                     throw e;
                 }
-            }
+            } catch (NoSuchAlgorithmException e) {
+				throw new BlobStoreException(e.toString());
+			} catch (NoSuchPaddingException e) {
+				throw new BlobStoreException(e.toString());
+			} catch (InvalidKeyException e) {
+				throw new BlobStoreException(e.toString());
+			}
         }
         throw new BlobStoreException("retries exhausted while attempting to access blob object [name:" + blobName + ", bucket:" + blobStore.bucket() +"]");
     }
@@ -100,7 +129,22 @@ public class S3BlobContainer extends AbstractBlobContainer {
     @Override
     public OutputStream createOutput(final String blobName) throws IOException {
         // UploadS3OutputStream does buffering & retry logic internally
-        return new DefaultS3OutputStream(blobStore, blobStore.bucket(), buildKey(blobName), blobStore.bufferSizeInBytes(), blobStore.numberOfRetries(), blobStore.serverSideEncryption());
+    	OutputStream outputStream = new DefaultS3OutputStream(blobStore, blobStore.bucket(), buildKey(blobName), blobStore.bufferSizeInBytes(), blobStore.numberOfRetries(), blobStore.serverSideEncryption());
+    	if (blobStore.clientSideEncryptionPublicKey() != null) {
+    		Cipher cipher;
+			try {
+				cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding", new BouncyCastleProvider());
+				cipher.init(Cipher.ENCRYPT_MODE, (Key) PublicKeyFactory.createKey(blobStore.clientSideEncryptionPublicKey().getBytes()));
+			} catch (NoSuchAlgorithmException e) {
+				throw new BlobStoreException(e.toString());
+			} catch (NoSuchPaddingException e) {
+				throw new BlobStoreException(e.toString());
+			} catch (InvalidKeyException e) {
+				throw new BlobStoreException(e.toString());
+			}
+    		outputStream = new CipherOutputStream(outputStream, cipher);
+    	}
+        return outputStream;
     }
 
     @Override

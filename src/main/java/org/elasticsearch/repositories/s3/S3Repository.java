@@ -114,6 +114,8 @@ public class S3Repository extends BlobStoreRepository {
         }
 
         boolean serverSideEncryption = repositorySettings.settings().getAsBoolean("server_side_encryption", settings.getAsBoolean("repositories.s3.server_side_encryption", false));
+		String clientSideEncryptionPrivateKey = repositorySettings.settings().get("client_side_encryption_private_key", settings.get("client_side_encryption_private_key", null));
+		String clientSideEncryptionPublicKey = repositorySettings.settings().get("client_side_encryption_public_key", settings.get("client_side_encryption_public_key", null));
         ByteSizeValue bufferSize = repositorySettings.settings().getAsBytesSize("buffer_size", settings.getAsBytesSize("repositories.s3.buffer_size", null));
         Integer maxRetries = repositorySettings.settings().getAsInt("max_retries", settings.getAsInt("repositories.s3.max_retries", 3));
         this.chunkSize = repositorySettings.settings().getAsBytesSize("chunk_size", settings.getAsBytesSize("repositories.s3.chunk_size", new ByteSizeValue(100, ByteSizeUnit.MB)));
@@ -122,7 +124,7 @@ public class S3Repository extends BlobStoreRepository {
         logger.debug("using bucket [{}], region [{}], endpoint [{}], protocol [{}], chunk_size [{}], server_side_encryption [{}], buffer_size [{}], max_retries [{}]",
                 bucket, region, endpoint, protocol, chunkSize, serverSideEncryption, bufferSize, maxRetries);
 
-        blobStore = new S3BlobStore(settings, s3Service.client(endpoint, protocol, region, repositorySettings.settings().get("access_key"), repositorySettings.settings().get("secret_key"), maxRetries), bucket, region, serverSideEncryption, bufferSize, maxRetries);
+        blobStore = new S3BlobStore(settings, s3Service.client(endpoint, protocol, region, repositorySettings.settings().get("access_key"), repositorySettings.settings().get("secret_key"), maxRetries), bucket, region, serverSideEncryption, clientSideEncryptionPublicKey, clientSideEncryptionPrivateKey, bufferSize, maxRetries);
         String basePath = repositorySettings.settings().get("base_path", null);
         if (Strings.hasLength(basePath)) {
             BlobPath path = new BlobPath();
